@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Typographic Constellation Chat</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "@chenglou/pretext": "https://esm.sh/@chenglou/pretext@0.2.0"
+        }
+    }
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
+            overflow: hidden;
+            height: 100vh;
+            color: #fff;
+        }
+
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+
+        #canvas:active {
+            cursor: grabbing;
+        }
+
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .message-bubble {
+            position: absolute;
+            pointer-events: auto;
+            cursor: grab;
+            user-select: none;
+            transition: transform 0.1s ease-out, box-shadow 0.2s ease;
+            border-radius: 20px;
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 
+                0 4px 30px rgba(0, 0, 0, 0.3),
+                0 0 40px rgba(100, 150, 255, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            max-width: 320px;
+        }
+
+        .message-bubble:hover {
+            box-shadow: 
+                0 8px 40px rgba(0, 0, 0, 0.4),
+                0 0 60px rgba(100, 150, 255, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            transform: scale(1.02);
+        }
+
+        .message-bubble.dragging {
+            cursor: grabbing;
+            z-index: 1000;
+            box-shadow: 
+                0 12px 50px rgba(0, 0, 0, 0.5),
+                0 0 80px rgba(100, 150, 255, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .message-bubble.sent {
+            background: linear-gradient(135deg, rgba(86, 119, 252, 0.15), rgba(86, 119, 252, 0.05));
+            border-color: rgba(86, 119, 252, 0.3);
+        }
+
+        .message-bubble.received {
+            background: linear-gradient(135deg, rgba(255, 107, 107, 0.15), rgba(255, 107, 107, 0.05));
+            border-color: rgba(255, 107, 107, 0.3);
+        }
+
+        .message-author {
+            font-size: 12px;
+            font-weight: 600;
+            opacity: 0.7;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .message-text {
+            font-size: 14px;
+            line-height: 1.5;
+            color: rgba(255, 255, 255, 0.95);
+        }
+
+        .message-time {
+            font-size: 11px;
+            opacity: 0.5;
+            margin-top: 8px;
+            text-align: right;
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            pointer-events: auto;
+            z-index: 100;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-weight: 500;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        #input-area {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            pointer-events: auto;
+            z-index: 100;
+        }
+
+        #message-input {
+            width: 400px;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            color: #fff;
+            font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        #message-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        #message-input:focus {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.4);
+            box-shadow: 0 0 30px rgba(100, 150, 255, 0.2);
+        }
+
+        .title {
+            position: fixed;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .title h1 {
+            font-size: 24px;
+            font-weight: 300;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, #fff, #a0b0ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .title p {
+            font-size: 13px;
+            opacity: 0.6;
+            font-weight: 300;
+        }
+
+        .star {
+            position: absolute;
+            background: #fff;
+            border-radius: 50%;
+            animation: twinkle 3s ease-in-out infinite;
+        }
+
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+
+        .constellation-line {
+            position: absolute;
+            height: 1px;
+            background: linear-gradient(90deg, 
+                transparent, 
+                rgba(100, 150, 255, 0.3) 20%, 
+                rgba(100, 150, 255, 0.5) 50%, 
+                rgba(100, 150, 255, 0.3) 80%, 
+                transparent
+            );
+            transform-origin: left center;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="title">
+        <h1>Typographic Constellation</h1>
+        <p>Drag messages to explore • Lines connect conversations</p>
+    </div>
+
+    <canvas id="canvas"></canvas>
+    
+    <div id="ui-layer">
+        <div id="bubbles-container"></div>
+    </div>
+
+    <div id="input-area">
+        <input type="text" id="message-input" placeholder="Type a message and press Enter..." />
+    </div>
+
+    <div id="controls">
+        <button class="btn" id="add-random">Add Sample</button>
+        <button class="btn" id="reset-view">Reset View</button>
+        <button class="btn" id="toggle-connections">Toggle Lines</button>
+    </div>
+
+    <script type="module">
+        import { prepare, layout } from '@chenglou/pretext';
+
+        // Sample conversations
+        const sampleMessages = [
+            { text: "Hey! Have you seen the new design system? It's absolutely stunning with all the new typography options.", author: "Alex", type: "sent", time: "2:30 PM" },
+            { text: "Yes! The way they handle text measurement is incredible. No more layout thrashing!", author: "Sam", type: "received", time: "2:32 PM" },
+            { text: "I love how smooth the animations are. 60fps without breaking a sweat.", author: "Alex", type: "sent", time: "2:33 PM" },
+            { text: "The constellation effect is such a creative way to visualize conversations. It feels like we're mapping thoughts in space.", author: "Jordan", type: "received", time: "2:35 PM" },
+            { text: "Exactly! Each message is a star, and the connections show how ideas flow between people.", author: "Alex", type: "sent", time: "2:36 PM" },
+            { text: "Have you tried dragging them around? The physics feel so natural.", author: "Sam", type: "received", time: "2:38 PM" },
+            { text: "It's mesmerizing. Like organizing constellations in the night sky.", author: "Jordan", type: "received", time: "2:40 PM" },
+            { text: "The dark theme really makes it feel like we're floating in space. 🌌", author: "Alex", type: "sent", time: "2:42 PM" },
+            { text: "I wonder what other UI patterns could benefit from this approach?", author: "Sam", type: "received", time: "2:45 PM" },
+            { text: "Mind maps, brainstorming sessions, even code dependency graphs!", author: "Alex", type: "sent", time: "2:47 PM" },
+            { text: "The possibilities are endless when you break free from traditional layouts.", author: "Jordan", type: "received", time: "2:50 PM" },
+            { text: "Text measurement without DOM reflow is a game changer for performance.", author: "Sam", type: "received", time: "2:52 PM" },
+            { text: "Pure arithmetic calculations mean we can layout thousands of elements instantly.", author: "Alex", type: "sent", time: "2:55 PM" },
+            { text: "This is the future of web typography. Fast, fluid, and beautiful.", author: "Jordan", type: "received", time: "2:58 PM" }
+        ];
+
+        // State
+        const messages = [];
+        let draggedMessage = null;
+        let dragOffset = { x: 0, y: 0 };
+        let showConnections = true;
+        let mouse = { x: 0, y: 0 };
+        let animationId;
+
+        // Canvas setup for background stars
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const bubblesContainer = document.getElementById('bubbles-container');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Background stars
+        const stars = [];
+        for (let i = 0; i < 150; i++) {
+            stars.push({
+                x: Math.random() * window.innerWidth,
+                y: Math.random() * window.innerHeight,
+                size: Math.random() * 2 + 0.5,
+                opacity: Math.random() * 0.8 + 0.2,
+                twinkleSpeed: Math.random() * 0.02 + 0.01,
+                twinklePhase: Math.random() * Math.PI * 2
+            });
+        }
+
+        function drawBackground() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw stars
+            stars.forEach(star => {
+                const twinkle = Math.sin(Date.now() * star.twinkleSpeed + star.twinklePhase);
+                const opacity = star.opacity * (0.5 + 0.5 * twinkle);
+                
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+                ctx.fill();
+            });
+
+            // Draw constellation lines between nearby messages
+            if (showConnections) {
+                drawConstellationLines();
+            }
+        }
+
+        function drawConstellationLines() {
+            const maxDistance = 250;
+            const maxConnections = 3;
+
+            messages.forEach((msg, i) => {
+                let connections = 0;
+                
+                for (let j = i + 1; j < messages.length && connections < maxConnections; j++) {
+                    const other = messages[j];
+                    const dx = other.x - msg.x;
+                    const dy = other.y - msg.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < maxDistance) {
+                        const opacity = (1 - distance / maxDistance) * 0.3;
+                        const gradient = ctx.createLinearGradient(msg.x, msg.y, other.x, other.y);
+                        gradient.addColorStop(0, `rgba(100, 150, 255, 0)`);
+                        gradient.addColorStop(0.5, `rgba(100, 150, 255, ${opacity})`);
+                        gradient.addColorStop(1, `rgba(100, 150, 255, 0)`);
+
+                        ctx.beginPath();
+                        ctx.moveTo(msg.x, msg.y);
+                        ctx.lineTo(other.x, other.y);
+                        ctx.strokeStyle = gradient;
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+
+                        connections++;
+                    }
+                }
+            });
+        }
+
+        // Font configuration for Pretext
+        const font = '14px Inter, -apple-system, BlinkMacSystemFont, sans-serif';
+        const lineHeight = 21; // 1.5 * 14px
+        const maxBubbleWidth = 280;
+        const padding = { x: 40, y: 60 }; // Total padding (20px each side + extra)
+
+        function measureText(text) {
+            const prepared = prepare(text, font, {
+                maxWidth: maxBubbleWidth,
+                lineHeight: lineHeight
+            });
+            
+            // Calculate actual dimensions
+            let maxLineWidth = 0;
+            let lineCount = 1;
+            let currentWidth = 0;
+            
+            // Simple measurement - Pretext gives us the layout info
+            // We'll use canvas for quick measurement since Pretext prepares the text
+            const measureCanvas = document.createElement('canvas');
+            const measureCtx = measureCanvas.getContext('2d');
+            measureCtx.font = font;
+            
+            const words = text.split(' ');
+            let currentLine = '';
+            const lines = [];
+            
+            for (let word of words) {
+                const testLine = currentLine ? currentLine + ' ' + word : word;
+                const metrics = measureCtx.measureText(testLine);
+                
+                if (metrics.width > maxBubbleWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = word;
+                } else {
+                    currentLine = testLine;
+                }
+            }
+            lines.push(currentLine);
+            
+            // Calculate actual width needed
+            lines.forEach(line => {
+                const width = measureCtx.measureText(line).width;
+                maxLineWidth = Math.max(maxLineWidth, width);
+            });
+            
+            return {
+                width: Math.min(maxLineWidth + padding.x, maxBubbleWidth + padding.x),
+                height: lines.length * lineHeight + padding.y,
+                lines: lines
+            };
+        }
+
+        function createMessageBubble(data, index) {
+            const measurements = measureText(data.text);
+            
+            // Calculate spiral position
+            const angle = index * 0.5;
+            const radius = 100 + index * 30;
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            
+            const x = centerX + Math.cos(angle) * radius - measurements.width / 2;
+            const y = centerY + Math.sin(angle) * radius * 0.6 - measurements.height / 2;
+
+            const bubble = document.createElement('div');
+            bubble.className = `message-bubble ${data.type}`;
+            bubble.style.width = `${measurements.width}px`;
+            bubble.style.left = `${x}px`;
+            bubble.style.top = `${y}px`;
+            bubble.dataset.index = index;
+
+            bubble.innerHTML = `
+                <div class="message-author">${data.author}</div>
+                <div class="message-text">${escapeHtml(data.text)}</div>
+                <div class="message-time">${data.time}</div>
+            `;
+
+            // Store message data
+            const msgData = {
+                element: bubble,
+                x: x + measurements.width / 2,
+                y: y + measurements.height / 2,
+                width: measurements.width,
+                height: measurements.height,
+                vx: 0,
+                vy: 0,
+                ...data
+            };
+            
+            messages.push(msgData);
+            bubblesContainer.appendChild(bubble);
+
+            // Drag handlers
+            bubble.addEventListener('mousedown', (e) => startDrag(e, msgData));
+            bubble.addEventListener('touchstart', (e) => startDrag(e, msgData), { passive: false });
+
+            // Animate in
+            bubble.style.opacity = '0';
+            bubble.style.transform = 'scale(0.8)';
+            
+            requestAnimationFrame(() => {
+                bubble.style.transition = 'opacity 0.4s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                bubble.style.opacity = '1';
+                bubble.style.transform = 'scale(1)';
+                
+                setTimeout(() => {
+                    bubble.style.transition = 'transform 0.1s ease-out, box-shadow 0.2s ease';
+                }, 400);
+            });
+
+            return msgData;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function startDrag(e, msg) {
+            e.preventDefault();
+            draggedMessage = msg;
+            msg.element.classList.add('dragging');
+            
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            const rect = msg.element.getBoundingClientRect();
+            dragOffset.x = clientX - rect.left;
+            dragOffset.y = clientY - rect.top;
+            
+            msg.vx = 0;
+            msg.vy = 0;
+        }
+
+        function onMove(e) {
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            mouse.x = clientX;
+            mouse.y = clientY;
+
+            if (draggedMessage) {
+                const newX = clientX - dragOffset.x;
+                const newY = clientY - dragOffset.y;
+                
+                draggedMessage.element.style.left = `${newX}px`;
+                draggedMessage.element.style.top = `${newY}px`;
+                
+                // Update center position
+                draggedMessage.x = newX + draggedMessage.width / 2;
+                draggedMessage.y = newY + draggedMessage.height / 2;
+            }
+        }
+
+        function onEnd() {
+            if (draggedMessage) {
+                draggedMessage.element.classList.remove('dragging');
+                draggedMessage = null;
+            }
+        }
+
+        // Global event listeners
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd);
+
+        // Animation loop
+        function animate() {
+            drawBackground();
+            animationId = requestAnimationFrame(animate);
+        }
+
+        // Initialize with sample messages
+        function addSampleMessages() {
+            sampleMessages.forEach((msg, i) => {
+                setTimeout(() => {
+                    createMessageBubble(msg, messages.length);
+                }, i * 100);
+            });
+        }
+
+        // Add random message
+        function addRandomMessage() {
+            const randomMsg = sampleMessages[Math.floor(Math.random() * sampleMessages.length)];
+            const newMsg = {
+                ...randomMsg,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            createMessageBubble(newMsg, messages.length);
+        }
+
+        // Add custom message
+        function addCustomMessage(text) {
+            const newMsg = {
+                text: text,
+                author: "You",
+                type: "sent",
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            createMessageBubble(newMsg, messages.length);
+        }
+
+        // Reset view
+        function resetView() {
+            messages.forEach((msg, i) => {
+                const angle = i * 0.5;
+                const radius = 100 + i * 30;
+                const centerX = window.innerWidth / 2;
+                const centerY = window.innerHeight / 2;
+                
+                const x = centerX + Math.cos(angle) * radius - msg.width / 2;
+                const y = centerY + Math.sin(angle) * radius * 0.6 - msg.height / 2;
+                
+                msg.element.style.transition = 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                msg.element.style.left = `${x}px`;
+                msg.element.style.top = `${y}px`;
+                
+                msg.x = x + msg.width / 2;
+                msg.y = y + msg.height / 2;
+                
+                setTimeout(() => {
+                    msg.element.style.transition = 'transform 0.1s ease-out, box-shadow 0.2s ease';
+                }, 600);
+            });
+        }
+
+        // Toggle connections
+        function toggleConnections() {
+            showConnections = !showConnections;
+        }
+
+        // Event listeners for controls
+        document.getElementById('add-random').addEventListener('click', addRandomMessage);
+        document.getElementById('reset-view').addEventListener('click', resetView);
+        document.getElementById('toggle-connections').addEventListener('click', toggleConnections);
+
+        // Input handling
+        const input = document.getElementById('message-input');
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && input.value.trim()) {
+                addCustomMessage(input.value.trim());
+                input.value = '';
+            }
+        });
+
+        // Initialize
+        addSampleMessages();
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            stars.forEach(star => {
+                star.x = Math.random() * window.innerWidth;
+                star.y = Math.random() * window.innerHeight;
+            });
+        });
+    </script>
+</body>
+</html>
